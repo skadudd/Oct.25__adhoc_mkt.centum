@@ -1,0 +1,21 @@
+{
+  "mcpServers": {
+    "shrimp-task-manager": {
+      "command": "node",
+      "args": [
+        "/Users/nam-yeong/.mcp/shrimp-task-manager/dist/index.js"
+      ],
+      "env": {
+        "DATA_DIR": "/Users/nam-yeong/.mcp/shrimp-task-manager/data"
+      }
+    },
+    "filesystem": {
+      "command": "node",
+      "args": [
+        "/Users/nam-yeong/.mcp/mcp-servers/src/filesystem/dist/index.js",
+        "/Users/nam-yeong/git"
+      ]
+    }
+  }
+}
+
