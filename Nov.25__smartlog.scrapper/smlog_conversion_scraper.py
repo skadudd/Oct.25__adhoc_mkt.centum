@@ -1,9 +1,9 @@
 #!/usr/bin/env python3
 """
-SMLOG Detailed Data Scraper
-Extracts data from each page (네트워크, 키워드, 사이트, 미디어)
-Sets same date for start and end, iterates from 2025.8.18
-Exports data as CSV/Excel files with page names
+SMLOG Conversion Summary Scraper
+Extracts data from conversion summary page (유입유형)
+Sets date range from start_date to end_date, iterates day by day
+Exports data as CSV/Excel files with date range in filename
 """
 
 import asyncio
@@ -14,20 +14,23 @@ from playwright.async_api import async_playwright
 import os
 
 
-class SMLogDetailedScraper:
-    def __init__(self, username, password, svid="33138", start_date=None, days_limit=None):
+class SMLogConversionScraper:
+    def __init__(self, username, password, svid="33138", start_date=None, end_date=None, days_limit=None):
         self.username = username
         self.password = password
         self.svid = svid
         self.base_url = "https://smlog.co.kr"
         self.login_url = f"{self.base_url}/2020/member/login.html"
-        self.stats_url = f"{self.base_url}/hmisNew/ad_statistics.html?svid={svid}"
+        self.conversion_url = f"{self.base_url}/hmisNew/conversion_summary.html?svid={svid}"
 
-        # Buttons to scrape
-        self.buttons_to_scrape = ["네트워크", "키워드", "사이트", "미디어"]
+        # Button to scrape
+        self.button_text = "유입유형(전체)"
 
-        # Start date (default: 2025-08-18)
+        # Start date (default: 2025-11-05)
         self.start_date = start_date if start_date else datetime(2025, 11, 5)
+
+        # End date (default: today)
+        self.end_date = end_date if end_date else datetime.now()
 
         # Limit number of days to scrape (default: None = all days)
         self.days_limit = days_limit
@@ -70,19 +73,19 @@ class SMLogDetailedScraper:
                 await asyncio.sleep(3)
                 break
 
-        # Navigate to statistics page
-        await page.goto(self.stats_url, wait_until="domcontentloaded")
+        # Navigate to conversion summary page
+        await page.goto(self.conversion_url, wait_until="domcontentloaded")
         await asyncio.sleep(2)
 
         print("✓ Navigation completed successfully")
         return True
 
     async def find_and_click_button(self, page, button_text):
-        """Find and click a button by text"""
+        """Find and click a button by text (class = page-tab)"""
         print(f"\n[Button] Looking for button: {button_text}")
 
         try:
-            # Try to find the page-tab element directly
+            # Find the page-tab element
             tabs = await page.query_selector_all('div.page-tab')
             print(f"  Found {len(tabs)} page tabs")
 
@@ -105,52 +108,91 @@ class SMLogDetailedScraper:
             traceback.print_exc()
             return False
 
-    async def find_date_picker(self, page):
-        """Find the date picker elements"""
-        print(f"\n[DatePicker] Looking for date picker...")
-
-        try:
-            # Look for date picker input fields
-            date_inputs = await page.query_selector_all('input[type="date"], input[placeholder*="date"], input[class*="date"]')
-            print(f"  Found {len(date_inputs)} potential date input fields")
-
-            # Also look for calendar elements
-            calendar_cells = await page.query_selector_all('td[class*="weekend"][class*="active"][class*="available"], td[class*="start-date"], td[class*="end-date"]')
-            print(f"  Found {len(calendar_cells)} calendar cells")
-
-            return date_inputs, calendar_cells
-
-        except Exception as e:
-            print(f"  Error finding date picker: {e}")
-            return [], []
-
-    async def set_date_range(self, page, target_date):
-        """Set same date for both start and end using daterangepicker"""
+    async def set_date(self, page, target_date):
+        """Set date using form-control input fields and click apply/search buttons"""
         print(f"\n[Date] Setting date to {target_date.strftime('%Y-%m-%d')}")
 
         try:
-            # Format date in Korean style (YYYY.MM.dd)
-            date_format_kr = target_date.strftime('%Y.%m.%d')
-            # Date range format: YYYY.MM.dd - YYYY.MM.dd (both same)
-            date_range_str = f"{date_format_kr} - {date_format_kr}"
+            # Format date as YYYY-MM-DD
+            date_str = target_date.strftime('%Y-%m-%d')
 
-            # Find the daterange input field
-            daterange_input = await page.query_selector('input[name="daterange"]')
+            # Find all form-control date inputs
+            date_inputs = await page.query_selector_all('input.form-control[type="date"], input.form-control[type="text"]')
+            print(f"  Found {len(date_inputs)} form-control inputs")
 
-            if daterange_input:
-                # Clear and fill the daterange input
-                await daterange_input.fill(date_range_str)
-                print(f"  Filled daterange: {date_range_str}")
+            if len(date_inputs) >= 2:
+                # Set start date (first input)
+                await date_inputs[0].fill(date_str)
+                print(f"  Set start date: {date_str}")
+                await asyncio.sleep(0.5)
+
+                # Set end date (second input) - same date for single day
+                await date_inputs[1].fill(date_str)
+                print(f"  Set end date: {date_str}")
                 await asyncio.sleep(1)
 
-                # Trigger change event
-                await page.evaluate('() => {window.dispatchEvent(new Event("change"))}')
-                await asyncio.sleep(2)
+                # Step 1: Click apply button (class = applyBtn btn btn-sm btn-primary)
+                apply_button = await page.query_selector('.applyBtn.btn.btn-sm.btn-primary')
+                if not apply_button:
+                    # Try alternative selector
+                    apply_button = await page.query_selector('button.applyBtn')
+                
+                if apply_button:
+                    await apply_button.click()
+                    print(f"  ✓ Clicked apply button")
+                    await asyncio.sleep(2)
+                else:
+                    print(f"  ⚠ Apply button not found, trying to continue...")
 
-                print(f"  ✓ Date set successfully")
+                # Step 2: Click search button (class = btn-container-search)
+                search_button = await page.query_selector('.btn-container-search')
+                if not search_button:
+                    # Try alternative selectors
+                    search_button = await page.query_selector('button.btn-container-search')
+                    if not search_button:
+                        search_button = await page.query_selector('.btn-search')
+                
+                if search_button:
+                    await search_button.click()
+                    print(f"  ✓ Clicked search button")
+                    await asyncio.sleep(3)  # Wait for data to load
+                else:
+                    print(f"  ⚠ Search button not found, trying alternative methods...")
+                    # Fallback: try to find any search/submit button
+                    search_buttons = await page.query_selector_all('button[type="submit"], button.btn-primary, button.btn-search')
+                    if search_buttons:
+                        await search_buttons[0].click()
+                        await asyncio.sleep(3)
+                        print(f"  ✓ Clicked fallback search button")
+                    else:
+                        print(f"  ✗ No search button found")
+
+                print(f"  ✓ Date set and buttons clicked")
+                return True
+            elif len(date_inputs) == 1:
+                # Single date input
+                await date_inputs[0].fill(date_str)
+                print(f"  Set date: {date_str}")
+                await asyncio.sleep(1)
+
+                # Click apply button
+                apply_button = await page.query_selector('.applyBtn.btn.btn-sm.btn-primary')
+                if apply_button:
+                    await apply_button.click()
+                    await asyncio.sleep(2)
+
+                # Click search button
+                search_button = await page.query_selector('.btn-container-search')
+                if search_button:
+                    await search_button.click()
+                    await asyncio.sleep(3)
+                    print(f"  ✓ Date set and buttons clicked")
+                else:
+                    print(f"  ⚠ Search button not found")
+                
                 return True
             else:
-                print(f"  ✗ daterange input not found")
+                print(f"  ✗ Date input fields not found")
                 return False
 
         except Exception as e:
@@ -160,7 +202,7 @@ class SMLogDetailedScraper:
             return False
 
     async def extract_table_data(self, page):
-        """Extract table data from card-table"""
+        """Extract table data from table with specific classes"""
         print(f"\n[Table] Extracting table data...")
 
         try:
@@ -168,28 +210,41 @@ class SMLogDetailedScraper:
 
             soup = BeautifulSoup(await page.content(), 'html.parser')
 
-            # Find the card-table
-            card_table = soup.find('table', class_=lambda x: x and ('card-table' in str(x).lower() or 'table-centered' in str(x)))
+            # Find the table with specific classes: table table-centered table-nowrap table-hover mb-0 data
+            table = soup.find('table', class_=lambda x: x and (
+                'table' in str(x).lower() and
+                'table-centered' in str(x).lower() and
+                'table-nowrap' in str(x).lower() and
+                'table-hover' in str(x).lower() and
+                'mb-0' in str(x).lower() and
+                'data' in str(x).lower()
+            ))
 
-            if not card_table:
-                # Try alternative selectors
-                card_table = soup.find('table', class_='table')
+            if not table:
+                # Try alternative: find table with 'data' class
+                table = soup.find('table', class_='data')
+                if not table:
+                    # Try any table with table-centered
+                    table = soup.find('table', class_='table-centered')
+                    if not table:
+                        # Try any table
+                        table = soup.find('table')
+                        print(f"  Using fallback table selector")
 
-            if not card_table:
+            if not table:
                 print(f"  ✗ No table found")
                 return None
 
-            # Extract headers - check all potential header rows
+            # Extract headers
             headers = []
-            thead = card_table.find('thead')
+            thead = table.find('thead')
             if thead:
-                # Get all th elements, even if they're in tbody (common in some tables)
                 all_ths = thead.find_all('th')
                 headers = [th.get_text(strip=True) for th in all_ths]
 
             # Extract rows from tbody
             rows = []
-            tbody = card_table.find('tbody')
+            tbody = table.find('tbody')
             if tbody:
                 for tr in tbody.find_all('tr'):
                     cells = tr.find_all('td')
@@ -204,11 +259,8 @@ class SMLogDetailedScraper:
                 # If headers don't match column count, generate column names
                 if headers and len(headers) != len(rows[0]) if rows else 0:
                     print(f"    Note: Header/column mismatch ({len(headers)} vs {len(rows[0]) if rows else 0}), using auto-generated column names")
-                    # Get the maximum number of columns
                     max_cols = max(len(row) for row in rows) if rows else 0
-                    # Generate column names if needed
                     if headers and len(headers) > 0:
-                        # Use headers for available columns, auto-generate for the rest
                         column_names = headers + [f'Column_{i}' for i in range(len(headers), max_cols)]
                     else:
                         column_names = [f'Column_{i}' for i in range(max_cols)]
@@ -226,18 +278,18 @@ class SMLogDetailedScraper:
             traceback.print_exc()
             return None
 
-    async def process_all_dates(self, page, button_text, output_dir="smlog_data"):
-        """Process data for all dates for a specific button"""
+    async def process_all_dates(self, page, output_dir="smlog_data"):
+        """Process data for all dates"""
         print(f"\n" + "=" * 70)
-        print(f"PROCESSING: {button_text}")
+        print(f"PROCESSING: {self.button_text}")
         print("=" * 70)
 
         # Create output directory
         os.makedirs(output_dir, exist_ok=True)
 
         # Click the button
-        if not await self.find_and_click_button(page, button_text):
-            print(f"✗ Could not click button: {button_text}")
+        if not await self.find_and_click_button(page, self.button_text):
+            print(f"✗ Could not click button: {self.button_text}")
             return False
 
         all_data = []
@@ -245,9 +297,11 @@ class SMLogDetailedScraper:
         today = datetime.now()
 
         # Calculate the limit date
+        end_date = self.end_date
         if self.days_limit:
             limit_date = self.start_date + timedelta(days=self.days_limit - 1)
-            today = min(today, limit_date)
+            end_date = min(end_date, limit_date)
+        end_date = min(end_date, today)
 
         # Track actual date range for filename
         first_date = None
@@ -255,25 +309,25 @@ class SMLogDetailedScraper:
 
         # Iterate through dates
         date_count = 0
-        while current_date <= today:
+        while current_date <= end_date:
             print(f"\n[{current_date.strftime('%Y-%m-%d')}] Processing date...")
 
-            # Set date range
-            if await self.set_date_range(page, current_date):
+            # Set date
+            if await self.set_date(page, current_date):
                 # Extract data
                 df = await self.extract_table_data(page)
 
-                if df is not None:
+                if df is not None and len(df) > 0:
                     df['date'] = current_date.strftime('%Y-%m-%d')
                     all_data.append(df)
                     date_count += 1
-                    
+
                     # Track date range
                     if first_date is None:
                         first_date = current_date
                     last_date = current_date
-                    
-                    print(f"  ✓ Data extracted for {current_date.strftime('%Y-%m-%d')}")
+
+                    print(f"  ✓ Data extracted for {current_date.strftime('%Y-%m-%d')} ({len(df)} rows)")
                 else:
                     print(f"  ℹ No data for {current_date.strftime('%Y-%m-%d')}")
             else:
@@ -295,47 +349,48 @@ class SMLogDetailedScraper:
                 start_date_str = first_date.strftime('%Y-%m-%d')
                 end_date_str = last_date.strftime('%Y-%m-%d')
             else:
-                # Fallback to start_date and today if no data collected
+                # Fallback to start_date and end_date if no data collected
                 start_date_str = self.start_date.strftime('%Y-%m-%d')
-                end_date_str = today.strftime('%Y-%m-%d')
+                end_date_str = end_date.strftime('%Y-%m-%d')
 
-            # Export with new naming convention: {start_date}_{end_date}_{button_text}
-            filename = f"{output_dir}/{start_date_str}_{end_date_str}_{button_text}"
+            # Export with naming convention: {start_date}_{end_date}_{button_text}
+            button_name = self.button_text.replace('(', '').replace(')', '').replace(' ', '_')
+            filename = f"{output_dir}/{start_date_str}_{end_date_str}_{button_name}"
             csv_file = f"{filename}.csv"
             excel_file = f"{filename}.xlsx"
 
-            print(f"\n[Export] Saving {button_text}...")
+            print(f"\n[Export] Saving {self.button_text}...")
             combined_df.to_csv(csv_file, index=False, encoding='utf-8-sig')
             print(f"  ✓ CSV exported: {csv_file}")
 
             combined_df.to_excel(excel_file, index=False, engine='openpyxl')
             print(f"  ✓ Excel exported: {excel_file}")
 
-            print(f"\n✓ {button_text} complete: {len(combined_df)} rows from {date_count} dates")
+            print(f"\n✓ {self.button_text} complete: {len(combined_df)} rows from {date_count} dates")
             return True
         else:
-            print(f"✗ No data collected for {button_text}")
+            print(f"✗ No data collected for {self.button_text}")
             return False
 
     async def run(self):
         """Main execution"""
         print("=" * 70)
-        print("SMLOG Detailed Data Scraper")
+        print("SMLOG Conversion Summary Scraper")
         print("=" * 70)
 
         # Calculate end date
         today = datetime.now()
+        end_date = self.end_date
         if self.days_limit:
-            end_date = self.start_date + timedelta(days=self.days_limit - 1)
-            end_date = min(end_date, today)
-            num_days = (end_date - self.start_date).days + 1
-        else:
-            end_date = today
-            num_days = (end_date - self.start_date).days + 1
+            limit_date = self.start_date + timedelta(days=self.days_limit - 1)
+            end_date = min(end_date, limit_date)
+        end_date = min(end_date, today)
+
+        num_days = (end_date - self.start_date).days + 1
 
         print(f"\nDate Range: {self.start_date.strftime('%Y-%m-%d')} to {end_date.strftime('%Y-%m-%d')}")
         print(f"Total days: {num_days}")
-        print(f"Buttons to scrape: {', '.join(self.buttons_to_scrape)}")
+        print(f"Button to scrape: {self.button_text}")
 
         async with async_playwright() as p:
             browser = await p.chromium.launch(headless=True)
@@ -347,22 +402,21 @@ class SMLogDetailedScraper:
                     print("\n✗ Navigation failed")
                     return False
 
-                # Process each button
-                results = {}
-                for button_text in self.buttons_to_scrape:
-                    try:
-                        success = await self.process_all_dates(page, button_text)
-                        results[button_text] = "✓ Success" if success else "✗ Failed"
-                    except Exception as e:
-                        print(f"\n✗ Error processing {button_text}: {e}")
-                        results[button_text] = f"✗ Error: {e}"
+                # Process the button
+                try:
+                    success = await self.process_all_dates(page)
+                    result = "✓ Success" if success else "✗ Failed"
+                except Exception as e:
+                    print(f"\n✗ Error processing {self.button_text}: {e}")
+                    import traceback
+                    traceback.print_exc()
+                    result = f"✗ Error: {e}"
 
                 # Summary
                 print("\n" + "=" * 70)
                 print("SUMMARY")
                 print("=" * 70)
-                for button_text, status in results.items():
-                    print(f"  {button_text}: {status}")
+                print(f"  {self.button_text}: {result}")
                 print("=" * 70)
 
                 return True
@@ -395,14 +449,16 @@ if __name__ == '__main__':
         print("Please ensure data/info_smlog.csv exists with columns: usr, usrs, svid")
         raise
 
-    # Scrape ALL data from 2025-08-18 to today
-    days_to_scrape = None  # None = all data from 2025-08-18 to today
+    # Scrape data from start_date to end_date
+    days_to_scrape = None  # None = all data from start_date to end_date
 
-    scraper = SMLogDetailedScraper(
+    scraper = SMLogConversionScraper(
         username,
         password,
         svid,
-        start_date=datetime(2025, 11, 5),
+        start_date=datetime(2025, 8, 18),
+        end_date=datetime.now(),
         days_limit=days_to_scrape
     )
     asyncio.run(scraper.run())
+
