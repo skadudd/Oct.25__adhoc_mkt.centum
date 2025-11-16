@@ -456,7 +456,7 @@ if __name__ == '__main__':
         username,
         password,
         svid,
-        start_date=datetime(2025, 8, 18),
+        start_date=datetime(2025, 10, 18),
         end_date=datetime.now(),
         days_limit=days_to_scrape
     )
