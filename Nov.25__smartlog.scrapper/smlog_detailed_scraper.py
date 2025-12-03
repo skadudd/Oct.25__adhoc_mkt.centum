@@ -51,14 +51,14 @@ class SMLogDetailedScraper:
         login_button = await page.query_selector('.login-button-01')
         if login_button:
             await login_button.click()
-            await asyncio.sleep(3)
+            await asyncio.sleep(1)
 
         # Step 4: Click HMIS button
         print("  [4/5] Clicking HMIS button...")
         hmis_button = await page.query_selector('.hmis')
         if hmis_button:
             await hmis_button.click()
-            await asyncio.sleep(3)
+            await asyncio.sleep(1)
 
         # Step 5: Click service domain link
         print("  [5/5] Clicking service domain link...")
@@ -67,12 +67,12 @@ class SMLogDetailedScraper:
             href = await link.get_attribute('href')
             if href and f"svid={self.svid}" in href:
                 await link.click()
-                await asyncio.sleep(3)
+                await asyncio.sleep(1)
                 break
 
         # Navigate to statistics page
         await page.goto(self.stats_url, wait_until="domcontentloaded")
-        await asyncio.sleep(2)
+        await asyncio.sleep(1)
 
         print("✓ Navigation completed successfully")
         return True
@@ -92,7 +92,7 @@ class SMLogDetailedScraper:
                 if text == button_text or button_text in text:
                     print(f"  ✓ Found matching tab: '{text}'")
                     await tab.click()
-                    await asyncio.sleep(3)
+                    await asyncio.sleep(1)
                     print(f"  ✓ Button clicked")
                     return True
 
@@ -538,7 +538,7 @@ if __name__ == '__main__':
         username,
         password,
         svid,
-        start_date=datetime(2025, 8, 18),
+        start_date=datetime(2025, 11, 17),
         days_limit=days_to_scrape
     )
     asyncio.run(scraper.run())

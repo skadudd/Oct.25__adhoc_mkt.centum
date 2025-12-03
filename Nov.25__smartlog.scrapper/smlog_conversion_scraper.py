@@ -109,7 +109,7 @@ class SMLogConversionScraper:
             return False
 
     async def set_date(self, page, target_date):
-        """Set date using form-control input fields and click apply/search buttons"""
+        """Set date using form-control input fields with robust UI interaction"""
         print(f"\n[Date] Setting date to {target_date.strftime('%Y-%m-%d')}")
 
         try:
@@ -117,75 +117,273 @@ class SMLogConversionScraper:
             date_str = target_date.strftime('%Y-%m-%d')
 
             # Find all form-control date inputs
-            date_inputs = await page.query_selector_all('input.form-control[type="date"], input.form-control[type="text"]')
+            try:
+                # Wait for at least one input to be available
+                await page.wait_for_selector('input.form-control[type="date"], input.form-control[type="text"]', timeout=5000)
+                date_inputs = await page.query_selector_all('input.form-control[type="date"], input.form-control[type="text"]')
+            except Exception:
+                date_inputs = await page.query_selector_all('input.form-control[type="date"], input.form-control[type="text"]')
+            
             print(f"  Found {len(date_inputs)} form-control inputs")
 
             if len(date_inputs) >= 2:
-                # Set start date (first input)
-                await date_inputs[0].fill(date_str)
+                # Set start date (first input) with robust interaction
+                start_input = date_inputs[0]
+                await start_input.click()
+                await asyncio.sleep(0.3)
+                
+                # Clear existing text using keyboard shortcuts
+                cleared = False
+                for shortcut in ['Meta+A', 'Control+A']:
+                    try:
+                        await start_input.press(shortcut)
+                        await start_input.press('Backspace')
+                        cleared = True
+                        break
+                    except Exception:
+                        continue
+                
+                if not cleared:
+                    await start_input.fill('')
+                
+                await asyncio.sleep(0.2)
+                
+                # Type the new date
+                await start_input.type(date_str, delay=40)
                 print(f"  Set start date: {date_str}")
                 await asyncio.sleep(0.5)
 
                 # Set end date (second input) - same date for single day
-                await date_inputs[1].fill(date_str)
+                end_input = date_inputs[1]
+                await end_input.click()
+                await asyncio.sleep(0.3)
+                
+                # Clear existing text using keyboard shortcuts
+                cleared = False
+                for shortcut in ['Meta+A', 'Control+A']:
+                    try:
+                        await end_input.press(shortcut)
+                        await end_input.press('Backspace')
+                        cleared = True
+                        break
+                    except Exception:
+                        continue
+                
+                if not cleared:
+                    await end_input.fill('')
+                
+                await asyncio.sleep(0.2)
+                
+                # Type the new date
+                await end_input.type(date_str, delay=40)
                 print(f"  Set end date: {date_str}")
-                await asyncio.sleep(1)
+                await asyncio.sleep(0.5)
 
-                # Step 1: Click apply button (class = applyBtn btn btn-sm btn-primary)
-                apply_button = await page.query_selector('.applyBtn.btn.btn-sm.btn-primary')
-                if not apply_button:
-                    # Try alternative selector
-                    apply_button = await page.query_selector('button.applyBtn')
-                
+                # Blur the input to ensure changes are registered
+                for key in ['Tab', 'Enter']:
+                    try:
+                        await end_input.press(key)
+                        await asyncio.sleep(0.2)
+                        break
+                    except Exception:
+                        continue
+
+                # Step 1: Click apply button with multiple selector attempts
+                apply_button = None
+                apply_selectors = [
+                    'button.applyBtn',
+                    '.applyBtn.btn.btn-sm.btn-primary',
+                    '.applyBtn',
+                    'button.btn-primary.applyBtn',
+                    'button[class*="applyBtn"]'
+                ]
+
+                for selector in apply_selectors:
+                    try:
+                        candidate = await page.wait_for_selector(selector, timeout=2000)
+                        if candidate and await candidate.is_visible():
+                            apply_button = candidate
+                            print(f"  Found apply button with selector: {selector}")
+                            break
+                    except Exception:
+                        continue
+
                 if apply_button:
+                    print("  Clicking apply button...")
                     await apply_button.click()
-                    print(f"  ✓ Clicked apply button")
-                    await asyncio.sleep(2)
+                    await asyncio.sleep(1.5)
+                    print("  ✓ Apply button clicked")
                 else:
-                    print(f"  ⚠ Apply button not found, trying to continue...")
+                    print("  ℹ Apply button not visible; continuing")
 
-                # Step 2: Click search button (class = btn-container-search)
-                search_button = await page.query_selector('.btn-container-search')
-                if not search_button:
-                    # Try alternative selectors
-                    search_button = await page.query_selector('button.btn-container-search')
-                    if not search_button:
-                        search_button = await page.query_selector('.btn-search')
-                
+                # Step 2: Click search button with multiple selector attempts
+                search_button = None
+                search_selectors = [
+                    '#search_btn',
+                    '.btn-container-search',
+                    'div.btn-container-search',
+                    'button.btn-container-search',
+                    '.btn-search',
+                    '[id="search_btn"]'
+                ]
+
+                for selector in search_selectors:
+                    try:
+                        candidate = await page.wait_for_selector(selector, timeout=3000)
+                        if candidate:
+                            search_button = candidate
+                            print(f"  Found search button with selector: {selector}")
+                            break
+                    except Exception:
+                        continue
+
                 if search_button:
+                    print("  Clicking search button...")
                     await search_button.click()
-                    print(f"  ✓ Clicked search button")
-                    await asyncio.sleep(3)  # Wait for data to load
+                    await asyncio.sleep(2)
+                    print("  ✓ Search button clicked")
                 else:
-                    print(f"  ⚠ Search button not found, trying alternative methods...")
-                    # Fallback: try to find any search/submit button
-                    search_buttons = await page.query_selector_all('button[type="submit"], button.btn-primary, button.btn-search')
-                    if search_buttons:
-                        await search_buttons[0].click()
-                        await asyncio.sleep(3)
-                        print(f"  ✓ Clicked fallback search button")
-                    else:
-                        print(f"  ✗ No search button found")
+                    print("  ⚠ Search button not found; data may not refresh")
+
+                # Verify the input reflects our target date (retry up to 3 times)
+                date_set_correctly = False
+                for verify_attempt in range(3):
+                    try:
+                        start_value = await start_input.input_value()
+                        end_value = await end_input.input_value()
+                        print(f"  Verification attempt {verify_attempt + 1}: start={start_value}, end={end_value}")
+                        if start_value.strip() == date_str and end_value.strip() == date_str:
+                            print("  ✓ Date confirmed on inputs")
+                            date_set_correctly = True
+                            break
+                    except Exception:
+                        pass
+
+                    # Retry by re-entering the date
+                    if verify_attempt < 2:
+                        print("  ⚠ Date mismatch, re-entering value")
+                        await start_input.click()
+                        for shortcut in ['Meta+A', 'Control+A']:
+                            try:
+                                await start_input.press(shortcut)
+                                await start_input.press('Backspace')
+                                break
+                            except Exception:
+                                continue
+                        await start_input.fill('')
+                        await asyncio.sleep(0.2)
+                        await start_input.type(date_str, delay=40)
+                        await asyncio.sleep(0.3)
+                        
+                        await end_input.click()
+                        for shortcut in ['Meta+A', 'Control+A']:
+                            try:
+                                await end_input.press(shortcut)
+                                await end_input.press('Backspace')
+                                break
+                            except Exception:
+                                continue
+                        await end_input.fill('')
+                        await asyncio.sleep(0.2)
+                        await end_input.type(date_str, delay=40)
+                        await asyncio.sleep(0.3)
+                        
+                        try:
+                            await end_input.press('Tab')
+                        except Exception:
+                            pass
+                        await asyncio.sleep(0.3)
+                        
+                        if apply_button:
+                            await apply_button.click()
+                            await asyncio.sleep(1)
+                        if search_button:
+                            await search_button.click()
+                            await asyncio.sleep(2)
+
+                if not date_set_correctly:
+                    print(f"  ⚠ Unable to confirm date value (expected {date_str})")
 
                 print(f"  ✓ Date set and buttons clicked")
                 return True
             elif len(date_inputs) == 1:
-                # Single date input
-                await date_inputs[0].fill(date_str)
+                # Single date input with robust interaction
+                single_input = date_inputs[0]
+                await single_input.click()
+                await asyncio.sleep(0.3)
+                
+                # Clear existing text using keyboard shortcuts
+                cleared = False
+                for shortcut in ['Meta+A', 'Control+A']:
+                    try:
+                        await single_input.press(shortcut)
+                        await single_input.press('Backspace')
+                        cleared = True
+                        break
+                    except Exception:
+                        continue
+                
+                if not cleared:
+                    await single_input.fill('')
+                
+                await asyncio.sleep(0.2)
+                
+                # Type the new date
+                await single_input.type(date_str, delay=40)
                 print(f"  Set date: {date_str}")
-                await asyncio.sleep(1)
+                await asyncio.sleep(0.5)
+
+                # Blur the input
+                for key in ['Tab', 'Enter']:
+                    try:
+                        await single_input.press(key)
+                        await asyncio.sleep(0.2)
+                        break
+                    except Exception:
+                        continue
 
                 # Click apply button
-                apply_button = await page.query_selector('.applyBtn.btn.btn-sm.btn-primary')
+                apply_button = None
+                apply_selectors = [
+                    'button.applyBtn',
+                    '.applyBtn.btn.btn-sm.btn-primary',
+                    '.applyBtn'
+                ]
+                
+                for selector in apply_selectors:
+                    try:
+                        candidate = await page.wait_for_selector(selector, timeout=2000)
+                        if candidate and await candidate.is_visible():
+                            apply_button = candidate
+                            break
+                    except Exception:
+                        continue
+                
                 if apply_button:
                     await apply_button.click()
-                    await asyncio.sleep(2)
+                    await asyncio.sleep(1.5)
 
                 # Click search button
-                search_button = await page.query_selector('.btn-container-search')
+                search_button = None
+                search_selectors = [
+                    '#search_btn',
+                    '.btn-container-search',
+                    'div.btn-container-search',
+                    '.btn-search'
+                ]
+                
+                for selector in search_selectors:
+                    try:
+                        candidate = await page.wait_for_selector(selector, timeout=3000)
+                        if candidate:
+                            search_button = candidate
+                            break
+                    except Exception:
+                        continue
+                
                 if search_button:
                     await search_button.click()
-                    await asyncio.sleep(3)
+                    await asyncio.sleep(2)
                     print(f"  ✓ Date set and buttons clicked")
                 else:
                     print(f"  ⚠ Search button not found")
@@ -279,20 +477,21 @@ class SMLogConversionScraper:
             return None
 
     async def process_all_dates(self, page, output_dir="smlog_data"):
-        """Process data for all dates"""
+        """Process data for all dates - saves individual CSV per date in category folder"""
         print(f"\n" + "=" * 70)
         print(f"PROCESSING: {self.button_text}")
         print("=" * 70)
 
-        # Create output directory
-        os.makedirs(output_dir, exist_ok=True)
+        # Create output directory with button name subdirectory
+        button_name = self.button_text.replace('(', '').replace(')', '').replace(' ', '_')
+        button_output_dir = os.path.join(output_dir, button_name)
+        os.makedirs(button_output_dir, exist_ok=True)
 
         # Click the button
         if not await self.find_and_click_button(page, self.button_text):
             print(f"✗ Could not click button: {self.button_text}")
             return False
 
-        all_data = []
         current_date = self.start_date
         today = datetime.now()
 
@@ -303,14 +502,14 @@ class SMLogConversionScraper:
             end_date = min(end_date, limit_date)
         end_date = min(end_date, today)
 
-        # Track actual date range for filename
-        first_date = None
-        last_date = None
+        # Track success/failure
+        success_count = 0
+        failed_dates = []
 
         # Iterate through dates
-        date_count = 0
         while current_date <= end_date:
-            print(f"\n[{current_date.strftime('%Y-%m-%d')}] Processing date...")
+            date_str = current_date.strftime('%Y-%m-%d')
+            print(f"\n[{date_str}] Processing date...")
 
             # Set date
             if await self.set_date(page, current_date):
@@ -318,21 +517,20 @@ class SMLogConversionScraper:
                 df = await self.extract_table_data(page)
 
                 if df is not None and len(df) > 0:
-                    df['date'] = current_date.strftime('%Y-%m-%d')
-                    all_data.append(df)
-                    date_count += 1
-
-                    # Track date range
-                    if first_date is None:
-                        first_date = current_date
-                    last_date = current_date
-
-                    print(f"  ✓ Data extracted for {current_date.strftime('%Y-%m-%d')} ({len(df)} rows)")
+                    # Add date column
+                    df['date'] = date_str
+                    
+                    # Save individual CSV file for this date
+                    csv_filename = os.path.join(button_output_dir, f"{date_str}_{button_name}.csv")
+                    df.to_csv(csv_filename, index=False, encoding='utf-8-sig')
+                    print(f"  ✓ CSV saved: {csv_filename} ({len(df)} rows)")
+                    success_count += 1
                 else:
-                    print(f"  ℹ No data for {current_date.strftime('%Y-%m-%d')}")
+                    print(f"  ℹ No data for {date_str}")
+                    failed_dates.append(date_str)
             else:
-                print(f"  ✗ Could not set date")
-                break
+                print(f"  ✗ Could not set date for {date_str}")
+                failed_dates.append(date_str)
 
             # Move to next date
             current_date += timedelta(days=1)
@@ -340,37 +538,20 @@ class SMLogConversionScraper:
             # Minimal delay between date requests
             await asyncio.sleep(0.5)
 
-        # Combine all data
-        if all_data:
-            combined_df = pd.concat(all_data, ignore_index=True)
-
-            # Determine date range for filename
-            if first_date and last_date:
-                start_date_str = first_date.strftime('%Y-%m-%d')
-                end_date_str = last_date.strftime('%Y-%m-%d')
+        # Summary
+        print(f"\n" + "=" * 70)
+        print(f"SUMMARY for {self.button_text}")
+        print("=" * 70)
+        print(f"  ✓ Successfully saved: {success_count} dates")
+        if failed_dates:
+            print(f"  ✗ Failed dates: {len(failed_dates)}")
+            if len(failed_dates) <= 10:
+                print(f"    {', '.join(failed_dates)}")
             else:
-                # Fallback to start_date and end_date if no data collected
-                start_date_str = self.start_date.strftime('%Y-%m-%d')
-                end_date_str = end_date.strftime('%Y-%m-%d')
+                print(f"    {', '.join(failed_dates[:10])} ... and {len(failed_dates) - 10} more")
+        print("=" * 70)
 
-            # Export with naming convention: {start_date}_{end_date}_{button_text}
-            button_name = self.button_text.replace('(', '').replace(')', '').replace(' ', '_')
-            filename = f"{output_dir}/{start_date_str}_{end_date_str}_{button_name}"
-            csv_file = f"{filename}.csv"
-            excel_file = f"{filename}.xlsx"
-
-            print(f"\n[Export] Saving {self.button_text}...")
-            combined_df.to_csv(csv_file, index=False, encoding='utf-8-sig')
-            print(f"  ✓ CSV exported: {csv_file}")
-
-            combined_df.to_excel(excel_file, index=False, engine='openpyxl')
-            print(f"  ✓ Excel exported: {excel_file}")
-
-            print(f"\n✓ {self.button_text} complete: {len(combined_df)} rows from {date_count} dates")
-            return True
-        else:
-            print(f"✗ No data collected for {self.button_text}")
-            return False
+        return success_count > 0
 
     async def run(self):
         """Main execution"""
@@ -456,7 +637,7 @@ if __name__ == '__main__':
         username,
         password,
         svid,
-        start_date=datetime(2025, 10, 18),
+        start_date=datetime(2025, 8, 18),
         end_date=datetime.now(),
         days_limit=days_to_scrape
     )
