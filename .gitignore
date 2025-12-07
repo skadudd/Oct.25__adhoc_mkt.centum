@@ -6,7 +6,7 @@ f# Excel files
 *.xltx
 *.xltm
 *.xlt
-
+*.json
 # CSV files
 *.csv
 

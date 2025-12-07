@@ -91,45 +91,84 @@ class NaverPlaceLogin:
                 continue
         return False
 
-    async def toggle_ip_security_off(self, page: Page) -> None:
-        """Ensure the IP security toggle is OFF."""
-        print("\n[Login] Checking IP security toggle...")
+    async def check_ip_toggle_state(self, page: Page) -> tuple[bool, object]:
+        """IP 보안 토글 상태 확인. (is_off, checkbox_element) 반환"""
         checkbox = None
         for selector in self.selectors.ip_checkbox_candidates:
-            checkbox = await page.query_selector(selector)
-            if checkbox:
-                print(f"  Found checkbox selector: {selector}")
-                break
-
-        if checkbox:
             try:
-                is_checked = await checkbox.is_checked()
+                checkbox = await page.query_selector(selector)
+                if checkbox:
+                    print(f"  Found checkbox selector: {selector}")
+                    break
             except Exception:
-                is_checked = None
-        else:
-            is_checked = None
+                continue
+        
+        if not checkbox:
+            return None, None
+        
+        try:
+            is_checked = await checkbox.is_checked()
+            return not is_checked, checkbox  # is_off = not is_checked
+        except Exception:
+            return None, checkbox
 
+    async def toggle_ip_security_off(self, page: Page) -> bool:
+        """IP 보안 토글을 OFF로 설정하고 검증. 성공 시 True 반환"""
+        print("\n[Login] Checking IP security toggle state...")
+        
+        # 현재 상태 확인
+        is_off, checkbox = await self.check_ip_toggle_state(page)
+        
         toggle_label = await page.query_selector(self.selectors.ip_toggle_label)
         if not toggle_label:
-            print("  ⚠ IP security toggle label not found, skipping")
-            return
-
-        if is_checked is None:
-            print("  ℹ Checkbox state unknown, clicking label once to ensure OFF")
+            print("  ⚠ IP security toggle label not found")
+            return False
+        
+        if checkbox is None:
+            print("  ⚠ Checkbox element not found")
+            return False
+        
+        # 상태가 불명확한 경우
+        if is_off is None:
+            print("  ℹ Checkbox state unknown, clicking label to ensure OFF")
             await toggle_label.click()
             await asyncio.sleep(0.5)
-            return
-
-        if is_checked:
-            print("  IP security is ON → toggling OFF")
-            await toggle_label.click()
-            await asyncio.sleep(0.5)
-            if await checkbox.is_checked():
-                print("  ⚠ Toggle still ON, clicking again")
-                await toggle_label.click()
-                await asyncio.sleep(0.5)
+            # 재확인
+            is_off, _ = await self.check_ip_toggle_state(page)
+            if is_off:
+                print("  ✓ IP security toggle is now OFF")
+                return True
+            else:
+                print("  ⚠ Failed to verify toggle state")
+                return False
+        
+        # 이미 OFF인 경우
+        if is_off:
+            print("  ✓ IP security toggle is already OFF")
+            return True
+        
+        # ON인 경우 OFF로 변경
+        print("  IP security is ON → toggling OFF")
+        await toggle_label.click()
+        await asyncio.sleep(0.5)
+        
+        # 변경 후 재확인
+        is_off_after, _ = await self.check_ip_toggle_state(page)
+        if is_off_after:
+            print("  ✓ IP security toggle successfully set to OFF")
+            return True
         else:
-            print("  IP security already OFF")
+            print("  ⚠ Toggle still ON after click, trying again...")
+            await toggle_label.click()
+            await asyncio.sleep(0.5)
+            # 최종 확인
+            is_off_final, _ = await self.check_ip_toggle_state(page)
+            if is_off_final:
+                print("  ✓ IP security toggle is now OFF (after retry)")
+                return True
+            else:
+                print("  ✗ Failed to set IP security toggle to OFF")
+                return False
 
     async def perform_login(self, page: Page) -> bool:
         """Complete the login sequence."""
@@ -149,7 +188,20 @@ class NaverPlaceLogin:
             return False
         await asyncio.sleep(0.5)
 
-        await self.toggle_ip_security_off(page)
+        # IP 보안 토글을 OFF로 설정하고 검증
+        toggle_off_success = await self.toggle_ip_security_off(page)
+        if not toggle_off_success:
+            print("  ✗ Failed to set IP security toggle to OFF. Aborting login.")
+            return False
+        
+        # 최종 확인: toggle이 OFF 상태인지 재검증
+        is_off_final, _ = await self.check_ip_toggle_state(page)
+        if is_off_final is not True:
+            print("  ✗ IP security toggle verification failed. Aborting login.")
+            return False
+        
+        print("  ✓ IP security toggle confirmed OFF. Proceeding with login...")
+        await asyncio.sleep(0.3)
 
         print("  Clicking login button...")
         await page.click(self.selectors.login_button)
@@ -203,16 +255,17 @@ class NaverPlaceLogin:
 
 def load_credentials():
     """Load credentials from CSV (supports path with/without .csv)."""
+    # modules 폴더에서 상위로 이동하여 data 폴더 찾기
     csv_path = os.path.join(
-        os.path.dirname(__file__), "..", "data", "info_naver.csv"
+        os.path.dirname(__file__), "..", "..", "data", "info_naver.csv"
     )
     if not os.path.exists(csv_path):
-        alt_path = os.path.join(os.path.dirname(__file__), "..", "data", "info_naver")
+        alt_path = os.path.join(os.path.dirname(__file__), "..", "..", "data", "info_naver")
         if os.path.exists(alt_path):
             csv_path = alt_path
         else:
             raise FileNotFoundError(
-                "info_naver(.csv) not found in ../data/"
+                "info_naver(.csv) not found in ../../data/"
             )
 
     creds = pd.read_csv(csv_path)
