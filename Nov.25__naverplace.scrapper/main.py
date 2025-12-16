@@ -11,7 +11,7 @@ import asyncio
 from datetime import datetime, timedelta
 from playwright.async_api import async_playwright
 from modules.naverplace_login import NaverPlaceLogin, load_credentials
-from modules import PlaceHourlyInflowGraphScraper, PlaceInflowChannelScraper, PlaceInflowSegmentScraper
+from modules import PlaceHourlyInflowGraphScraper, PlaceInflowChannelScraper, PlaceInflowSegmentScraper, SmartcallCallStatisticsScraper, SmartcallTopMediaScraper, SmartcallTopKeywordScraper
 
 
 class NaverPlaceDataCollector:
@@ -187,32 +187,57 @@ def main():
     collector = NaverPlaceDataCollector(username, password)
     
     # # 스크래퍼 등록 (start_date, end_date 파라미터 포함)
+    # collector.register_scraper(
+    #     PlaceHourlyInflowGraphScraper(
+    #         username, 
+    #         password,
+    #         start_date=start_date,
+    #         end_date=end_date
+    #     )
+    # )
+
+    # collector.register_scraper(
+    #     PlaceInflowChannelScraper(
+    #         username, 
+    #         password,
+    #         start_date=start_date,
+    #         end_date=end_date
+    #     )
+    # )
+
+    # collector.register_scraper(
+    #     PlaceInflowSegmentScraper(
+    #         username, 
+    #         password,
+    #         start_date=start_date,
+    #         end_date=end_date
+    #     )
+    # )
+
     collector.register_scraper(
-        PlaceHourlyInflowGraphScraper(
-            username, 
-            password,
-            start_date=start_date,
-            end_date=end_date
+        SmartcallCallStatisticsScraper(
+            username, password,
+            start_date="2025-12-13",
+            end_date="2025-12-15"
         )
     )
 
-    collector.register_scraper(
-        PlaceInflowChannelScraper(
-            username, 
-            password,
-            start_date=start_date,
-            end_date=end_date
-        )
-    )
+    # collector.register_scraper(
+    #     SmartcallTopMediaScraper(
+    #         username, password,
+    #         start_date="2025-12-09",
+    #         end_date="2025-12-15"
+    #     )
+    # )
 
-    collector.register_scraper(
-        PlaceInflowSegmentScraper(
-            username, 
-            password,
-            start_date=start_date,
-            end_date=end_date
-        )
-    )
+    # collector.register_scraper(
+    #     SmartcallTopKeywordScraper(
+    #         username, password,
+    #         start_date="2025-12-09",
+    #         end_date="2025-12-15"
+    #     )
+    # )    
+
     asyncio.run(collector.run())
 
 if __name__ == "__main__":

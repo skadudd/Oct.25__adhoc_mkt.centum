@@ -76,36 +76,79 @@ class BaseScraper(ABC):
             end_str = self.end_date.replace("-", "")
             date_suffix = f"__{start_str}_{end_str}"
         
-        # CSV 저장 (hover_data, time_based_data, channel_data, 또는 segment_data가 있는 경우)
+        # CSV 저장 (다양한 데이터 키 지원)
         csv_data = None
+        print(f"\n[Save Results] Checking data keys: {list(data.keys())}")
+        
         if data.get("hover_data"):
             csv_data = data["hover_data"]
+            print(f"  ✓ Found hover_data: {len(csv_data) if isinstance(csv_data, list) else 'N/A'} items")
         elif data.get("time_based_data"):
             csv_data = data["time_based_data"]
+            print(f"  ✓ Found time_based_data: {len(csv_data) if isinstance(csv_data, list) else 'N/A'} items")
         elif data.get("channel_data"):
             csv_data = data["channel_data"]
+            print(f"  ✓ Found channel_data: {len(csv_data) if isinstance(csv_data, list) else 'N/A'} items")
         elif data.get("segment_data"):
             csv_data = data["segment_data"]
+            print(f"  ✓ Found segment_data: {len(csv_data) if isinstance(csv_data, list) else 'N/A'} items")
+        elif data.get("call_statistics_data") is not None:
+            csv_data = data["call_statistics_data"]
+            print(f"  ✓ Found call_statistics_data: {len(csv_data) if isinstance(csv_data, list) else 'N/A'} items")
+            if isinstance(csv_data, list):
+                if len(csv_data) > 0:
+                    print(f"    First row sample: {csv_data[0]}")
+                else:
+                    print(f"    ⚠ Warning: call_statistics_data is empty list")
+            else:
+                print(f"    ⚠ Warning: call_statistics_data is not a list: {type(csv_data)}")
+        elif data.get("top_media_data"):
+            csv_data = data["top_media_data"]
+            print(f"  ✓ Found top_media_data: {len(csv_data) if isinstance(csv_data, list) else 'N/A'} items")
+        elif data.get("top_keyword_data"):
+            csv_data = data["top_keyword_data"]
+            print(f"  ✓ Found top_keyword_data: {len(csv_data) if isinstance(csv_data, list) else 'N/A'} items")
+        else:
+            print(f"  ⚠ No CSV data key found in data")
         
-        if csv_data:
-            # event_dt 컬럼 추가 (YYYY-MM-DD 형식)
-            # start_date와 end_date가 같으면 그 날짜 사용, 다르면 start_date 사용
-            target_date = self.start_date if self.start_date else self.end_date
+        # csv_data가 None이 아니고 리스트인 경우 CSV 저장 (빈 리스트도 포함)
+        if csv_data is not None and isinstance(csv_data, list):
+            print(f"  [CSV Save] csv_data type: {type(csv_data)}, length: {len(csv_data)}")
             
-            # 각 행에 event_dt 추가
-            for row in csv_data:
-                if isinstance(row, dict):
-                    row["event_dt"] = target_date
-            
-            df = pd.DataFrame(csv_data)
-            # CSV 파일명: 모듈명__시작일_종료일.csv
-            csv_filename = f"{module_name}{date_suffix}.csv"
-            csv_path = os.path.join(output_dir, csv_filename)
-            df.to_csv(csv_path, index=False, encoding="utf-8-sig")
-            print(f"✓ CSV saved: {csv_path}")
-            
-            # 데이터 요약 출력
-            self._print_data_summary(csv_data)
+            try:
+                # event_dt 컬럼 추가 (YYYY-MM-DD 형식)
+                # start_date와 end_date가 같으면 그 날짜 사용, 다르면 start_date 사용
+                target_date = self.start_date if self.start_date else self.end_date
+                
+                # 각 행에 event_dt 추가
+                for row in csv_data:
+                    if isinstance(row, dict):
+                        row["event_dt"] = target_date
+                    else:
+                        print(f"  ⚠ Warning: row is not a dict: {type(row)}, value: {row}")
+                
+                df = pd.DataFrame(csv_data)
+                print(f"  [DataFrame] Created DataFrame with {len(df)} rows, {len(df.columns)} columns")
+                if len(df.columns) > 0:
+                    print(f"    Columns: {list(df.columns)}")
+                
+                # CSV 파일명: 모듈명__시작일_종료일.csv
+                csv_filename = f"{module_name}{date_suffix}.csv"
+                csv_path = os.path.join(output_dir, csv_filename)
+                df.to_csv(csv_path, index=False, encoding="utf-8-sig")
+                print(f"✓ CSV saved: {csv_path}")
+                
+                # 데이터 요약 출력
+                if len(csv_data) > 0:
+                    self._print_data_summary(csv_data)
+                else:
+                    print(f"  ⚠ Warning: CSV file created but contains no data rows")
+            except Exception as e:
+                print(f"  ✗ Error saving CSV: {e}")
+                import traceback
+                traceback.print_exc()
+        else:
+            print(f"  ⚠ No CSV data to save (csv_data is {csv_data}, type: {type(csv_data)})")
         
         # JSON 저장 (CSV와 동일한 파일명 형식 사용)
         json_filename = f"{module_name}{date_suffix}.json"
