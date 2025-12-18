@@ -108,6 +108,9 @@ class BaseScraper(ABC):
         elif data.get("top_keyword_data"):
             csv_data = data["top_keyword_data"]
             print(f"  ✓ Found top_keyword_data: {len(csv_data) if isinstance(csv_data, list) else 'N/A'} items")
+        elif data.get("combined_data"):
+            csv_data = data["combined_data"]
+            print(f"  ✓ Found combined_data: {len(csv_data) if isinstance(csv_data, list) else 'N/A'} items")
         else:
             print(f"  ⚠ No CSV data key found in data")
         

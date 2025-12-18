@@ -11,7 +11,7 @@ import asyncio
 from datetime import datetime, timedelta
 from playwright.async_api import async_playwright
 from modules.naverplace_login import NaverPlaceLogin, load_credentials
-from modules import PlaceHourlyInflowGraphScraper, PlaceInflowChannelScraper, PlaceInflowSegmentScraper, SmartcallCallStatisticsScraper, SmartcallTopMediaScraper, SmartcallTopKeywordScraper
+from modules import PlaceHourlyInflowGraphScraper, PlaceInflowChannelScraper, PlaceInflowSegmentScraper, SmartcallCallStatisticsScraper, SmartcallTopMediaScraper, SmartcallTopKeywordScraper, BookingTrendChartScraper
 
 
 class NaverPlaceDataCollector:
@@ -214,13 +214,13 @@ def main():
     #     )
     # )
 
-    collector.register_scraper(
-        SmartcallCallStatisticsScraper(
-            username, password,
-            start_date="2025-12-13",
-            end_date="2025-12-15"
-        )
-    )
+    # collector.register_scraper(
+    #     SmartcallCallStatisticsScraper(
+    #         username, password,
+    #         start_date="2025-12-15",
+    #         end_date="2025-12-15"
+    #     )
+    # )
 
     # collector.register_scraper(
     #     SmartcallTopMediaScraper(
@@ -238,6 +238,13 @@ def main():
     #     )
     # )    
 
+    collector.register_scraper(
+        BookingTrendChartScraper(
+            username, password,
+            start_date="2025-12-15",
+            end_date="2025-12-15"
+        )
+    )
     asyncio.run(collector.run())
 
 if __name__ == "__main__":

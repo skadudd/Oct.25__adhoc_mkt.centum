@@ -9,6 +9,7 @@ from .place_inflow_segment import PlaceInflowSegmentScraper
 from .smartcall_call_statistics import SmartcallCallStatisticsScraper
 from .smartcall_top_media import SmartcallTopMediaScraper
 from .smartcall_top_keyword import SmartcallTopKeywordScraper
+from .booking_trend_chart import BookingTrendChartScraper
 
 __all__ = [
     'BaseScraper', 
@@ -17,6 +18,7 @@ __all__ = [
     'PlaceInflowSegmentScraper',
     'SmartcallCallStatisticsScraper',
     'SmartcallTopMediaScraper',
-    'SmartcallTopKeywordScraper'
+    'SmartcallTopKeywordScraper',
+    'BookingTrendChartScraper'
 ]
 
